@@ -1,5 +1,6 @@
 ﻿using Core.Entities;
 using Core.Interfaces;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -8,41 +9,78 @@ using System.Threading.Tasks;
 
 namespace Infrastructure.Data
 {
-    public class ProductRepository : IProductRepository
+    public class ProductRepository(StoreContext context) : IProductRepository
     {
         public void AddProduct(Product product)
         {
-            throw new NotImplementedException();
+            context.Products.Add(product);
         }
 
         public void DeleteProduct(Product product)
         {
-            throw new NotImplementedException();
+            context.Remove(product);
         }
 
-        public Task<Product?> GetProductByIdAsync(int id)
+        public async Task<IReadOnlyList<string>?> GetBrandsAsync()
         {
-            throw new NotImplementedException();
+            return await context.Products
+                .Select(p => p.Brand)
+                .Distinct()
+                .ToListAsync();
         }
 
-        public Task<IReadOnlyList<Product>> GetProductsAsync()
+        public async Task<Product?> GetProductByIdAsync(int id)
         {
-            throw new NotImplementedException();
+            return await context.Products.FindAsync(id).AsTask();
+        }
+
+        public async Task<IReadOnlyList<Product>> GetProductsAsync(string? brand, string? type, string? sort)
+        {
+            var query = context.Products.AsQueryable();
+            if (!string.IsNullOrEmpty(brand))
+            {
+                query = query.Where(p => p.Brand == brand);
+            }
+            if (!string.IsNullOrEmpty(type))
+            {
+                query = query.Where(p => p.Type == type);
+            }
+           
+                query = sort switch
+                {
+                    "priceAsc" => query.OrderBy(p => p.Price),
+                    "priceDesc" => query.OrderByDescending(p => p.Price),
+                    _ => query.OrderBy(p => p.Name)
+                };
+            
+            return await query.ToListAsync();
+        }
+
+        public async Task<IReadOnlyList<string>?> GetTypesAsync()
+        {
+            return await context.Products
+                .Select(p => p.Type)
+                .Distinct()
+                .ToListAsync();
         }
 
         public bool ProductExists(int id)
         {
-            throw new NotImplementedException();
+            return context.Products.Any(p => p.Id == id);
         }
 
-        public Task<bool> SaveChangesAsync()
+        public async Task<bool> SaveChangesAsync()
         {
-            throw new NotImplementedException();
+            return await context.SaveChangesAsync().ContinueWith(task => task.Result > 0);
         }
 
         public void UpdateProduct(Product product)
         {
-            throw new NotImplementedException();
+            context.Entry(product).State = EntityState.Modified;
+            // No need to call SaveChanges here, it should be done in the calling method
+
         }
+
+
     }
 }

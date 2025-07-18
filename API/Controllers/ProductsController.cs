@@ -1,4 +1,5 @@
 ﻿using Core.Entities;
+using Core.Interfaces;
 using Infrastructure.Data;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -8,20 +9,20 @@ namespace API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class ProductsController(StoreContext context) : ControllerBase
+    public class ProductsController(IProductRepository repo) : ControllerBase
     {
-        private readonly StoreContext _context = context ?? throw new ArgumentNullException(nameof(context));
+
 
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Product>>> GetProducts()
+        public async Task<ActionResult<IReadOnlyList<Product>>> GetProducts(string? brand, string? type, string? sort)
         {
-            return await _context.Products.ToListAsync();
+            return Ok(await repo.GetProductsAsync(brand,type,sort));
         }
 
         [HttpGet("{id:int}")]
         public async Task<ActionResult<Product>> GetProduct(int id)
         {
-            var product = await _context.Products.FindAsync(id);
+            var product = await repo.GetProductByIdAsync(id);
             if (product == null)
             {
                 return NotFound();
@@ -36,22 +37,31 @@ namespace API.Controllers
             {
                 return BadRequest("Product cannot be null.");
             }
-            _context.Products.Add(product);
-            await _context.SaveChangesAsync();
+            repo.AddProduct(product);
+
+            if (!await repo.SaveChangesAsync())
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, "Error saving product to the database.");
+            }
+
             return CreatedAtAction(nameof(GetProduct), new { id = product.Id }, product);
         }
 
         [HttpPut("{id:int}")]
         public async Task<ActionResult> UpdateProduct(int id, Product product)
         {
-            if (id != product.Id)
+            if (id != product.Id|| !ProductExists(id))
             {
                 return BadRequest("Product ID mismatch.");
             }
-            _context.Entry(product).State = EntityState.Modified;
+
             try
             {
-                await _context.SaveChangesAsync();
+                repo.UpdateProduct(product);
+                if (!await repo.SaveChangesAsync())
+                {
+                    return StatusCode(StatusCodes.Status500InternalServerError, "Error updating product in the database.");
+                }
             }
             catch (DbUpdateConcurrencyException)
             {
@@ -66,21 +76,51 @@ namespace API.Controllers
 
         private bool ProductExists(int id)
         {
-            return _context.Products.Any(e => e.Id == id);
+            return repo.ProductExists(id);                                                                                                                              
 
         }
 
         [HttpDelete("{id:int}")]
         public async Task<ActionResult> DeleteProduct(int id)
         {
-            var product = await _context.Products.FindAsync(id);
+            if (!ProductExists(id))
+            {
+                return NotFound();
+            }
+            var product = await repo.GetProductByIdAsync(id);
             if (product == null)
             {
                 return NotFound();
             }
-            _context.Products.Remove(product);
-            await _context.SaveChangesAsync();
+            repo.DeleteProduct(product);
+            if (!await repo.SaveChangesAsync())
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, "Error deleting product from the database.");
+            }
             return NoContent();
+        }
+
+
+        [HttpGet("brands")]
+        public async Task<ActionResult<IReadOnlyList<string>>> GetBrands()
+        {
+            var brands = await repo.GetBrandsAsync();
+            if (brands == null || !brands.Any())
+            {
+                return NotFound("No brands found.");
+            }
+            return Ok(brands);
+        }
+
+        [HttpGet("types")]
+        public async Task<ActionResult<IReadOnlyList<string>>> GetTypes()
+        {
+            var types = await repo.GetTypesAsync();
+            if (types == null || !types.Any())
+            {
+                return NotFound("No types found.");
+            }
+            return Ok(types);
         }
     }
 }
